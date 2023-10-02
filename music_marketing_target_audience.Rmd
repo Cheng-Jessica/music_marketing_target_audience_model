@@ -1,0 +1,289 @@
+---
+title: "HW2_XYZdata"
+author: "Jessica Cheng"
+date: "2023-07-18"
+output: pdf_document
+---
+
+## Set Up
+
+```{r}
+setwd("C:/Users/Jessica/Downloads/R")
+library(ggplot2)
+library(dplyr)
+music = read.csv("XYZData.csv", stringsAsFactors = TRUE)
+str(music)
+summary(music)
+
+#Class imbalance
+barplot(prop.table(table(music$adopter)),
+        col = rainbow(2),
+        ylim = c(0, 1),
+        main = "Adoptor number"
+        )
+```
+
+## See vairables correlation
+
+```{r}
+library(caret)
+correlationMatrix <- cor(music[,1:26])
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff= 0.5)
+print(highlyCorrelated)
+```
+
+## Training/Validation Split
+```{r}
+library(caret)
+train_rows = createDataPartition(y = music$adopter, p=0.7,
+                                 list = FALSE)
+music_train = music[train_rows,]
+music_test = music[-train_rows,]
+```
+
+## K-NN Model_Original Dataset
+```{r}
+library(dplyr)
+library(caret)
+train_rows = createDataPartition(y = music$adopter, p=0.7,
+                                 list = FALSE)
+normalize = function(x){
+  return ((x-min(x))/(max(x)-min(x)))}
+music_normalized = music %>% mutate_at(2:26, normalize)
+
+music_normalized_train = music_normalized[train_rows,]
+music_normalized_test = music_normalized[-train_rows,]
+
+```
+
+#Evaluate the performance
+```{r}
+library(class)
+music_normalized_train$adopter <- factor(music_normalized_train$adopter)
+music_normalized_test$adopter <- factor(music_normalized_test$adopter)
+
+pred_knn = knn(train = music_normalized_train[,2:26],
+               test = music_normalized_test[,2:26],
+               cl = music_normalized_train$adopter,
+               k = 6)
+
+confusionMatrix(data = pred_knn,
+                reference = music_normalized_test$adopter,
+                mode = "prec_recall",
+                positive = "1")
+```
+
+##Try differnet k(Precision)
+```{r}
+#Try a few other k values
+library(class)
+for (kval in 2:10){
+  pred_knn = knn(train = music_normalized_train[,2:26],
+               test = music_normalized_test[,2:26],
+               cl = music_normalized_train$adopter,
+               k = kval)
+  cm = confusionMatrix(pred_knn, music_normalized_test$adopter,
+                       mode = "prec_recall",
+                       positive = "1")
+  precision = cm$byClass["Precision"]
+  cat(sprintf("Precision with k = %d is: %f \n",kval, precision))
+}
+```
+
+##Try differnet k(Recall)
+```{r}
+#Try a few other k values
+library(class)
+for (kval in 2:10){
+  pred_knn = knn(train = music_normalized_train[,2:26],
+               test = music_normalized_test[,2:26],
+               cl = music_normalized_train$adopter,
+               k = kval)
+  cm = confusionMatrix(pred_knn, music_normalized_test$adopter,
+                       mode = "prec_recall",
+                       positive = "1")
+  recall = cm$byClass["Recall"]
+  cat(sprintf("Recall with k = %d is: %f \n",kval, recall))
+}
+```
+
+##Try differnet k(F1_score)
+```{r}
+#Try a few other k values
+library(class)
+for (kval in 2:10){
+  pred_knn = knn(train = music_normalized_train[,2:26],
+               test = music_normalized_test[,2:26],
+               cl = music_normalized_train$adopter,
+               k = kval)
+  cm = confusionMatrix(pred_knn, music_normalized_test$adopter,
+                       mode = "prec_recall",
+                       positive = "1")
+  F1_score = cm$byClass["F1"]
+  cat(sprintf("F1 with k = %d is: %f \n",kval, F1_score))
+}
+```
+
+Interpretation:
+The confusion matrix and evaluation metrics suggest that the model is performing poorly. The high accuracy is misleading due to the imbalance in the data, where class 0 dominates. However, the model's ability to correctly predict class 1 (positive instances) is very low (low recall and precision), resulting in a low F1 score. The model's performance is not significantly better than random guessing, as indicated by the balanced accuracy close to 0.5.
+
+In summary, the model's performance on positive instances (class 1) is poor, likely due to the class imbalance. You may need to address the class imbalance and potentially explore different modeling approaches or evaluation strategies to improve the model's performance on the positive class.
+
+#Decision Tree Model
+```{r}
+#Train data, split data set
+library(caret)
+train_rows = createDataPartition(y = music$adopter, p=0.75,
+                                 list = FALSE)
+music_train = music[train_rows,]
+music_test = music[-train_rows,]
+
+```
+
+```{r}
+#Train a Decision Tree Model
+music_train$adopter <- factor(music_train$adopter)
+music_test$adopter <- factor(music_test$adopter)
+
+library(rpart)
+tree = rpart(adopter~., data = music_train,
+             method = "class",
+             parms = list(split = "information"),
+             control = list(minsplit = 10, maxdepth = 5))
+
+pred_tree = predict(tree, music_test, type = "class")
+
+pred_tree <- factor(pred_tree, levels = levels(music_test$adopter))
+
+confusionMatrix(data = pred_tree,
+                reference = music_test$adopter,
+                mode = "prec_recall")
+
+library(rpart.plot)
+prp(tree, varlen = 0)
+```
+
+
+
+
+#Oversampling
+```{r}
+library(ROSE)
+table(music_normalized_train$adopter)
+barplot(table(music_normalized_train$adopter))
+# Perform SMOTE to over sample the minority class
+# Try Balanced Class Ratio(1:1)
+oversampled_train <- ovun.sample(adopter ~., data = music_normalized_train, method = "over", N = 55918)
+
+# Check the class distribution after oversampling
+table(oversampled_train[["data"]][["adopter"]])
+barplot(table(oversampled_train[["data"]][["adopter"]]))
+over_music <- oversampled_train$data
+print(over_music)
+```
+
+## K-NN Model
+```{r}
+library(caret)
+train_rows = createDataPartition(y = over_music$adopter, p=0.7,
+                                 list = FALSE)
+
+library(dplyr)
+normalize = function(x){
+  return ((x-min(x))/(max(x)-min(x)))}
+
+over_music_nor = over_music %>% mutate_at(2:26, normalize)
+
+over_music_nor_train = over_music_nor[train_rows,]
+over_music_nor_test = over_music_nor[-train_rows,]
+
+```
+
+
+#Evaluate the performance
+```{r}
+library(dplyr)
+library(ggplot2)
+library(class)
+pred_knn = knn(train = over_music_nor_train[,2:26],
+               test = over_music_nor_test[,2:26],
+               cl = over_music_nor_train$adopter,
+               k = 5)
+
+confusionMatrix(data = pred_knn,
+                reference = over_music_nor_test$adopter,
+                mode = "prec_recall",
+                positive = "1")
+```
+
+#Evaluate the performance by AUC/ROC
+```{r}
+library(pROC)
+prob_pred_knn = predict(pred_knn, over_music_nor_test, type = "probability")
+
+```
+
+## Feature Selection: Wrapper Approach - Forward Selection
+
+```{r}
+best_rmse = 9999
+selected_features = c()
+while (TRUE) {
+  feature_to_add = -1
+  for (i in setdiff(2:26, selected_features)) {
+    train = over_music_train %>% select(selected_features, i, adopter)
+    test = over_music_test %>% select(selected_features, i, adopter)
+    model = lm(adopter ~ ., data = train)
+    pred = predict(model, test)
+    rmse = sqrt(mean((pred - test$adopter)^2))
+    if (rmse < best_rmse) {
+    best_rmse = rmse
+    feature_to_add = i
+  }
+}
+if (feature_to_add != -1) {
+  selected_features = c(selected_features, feature_to_add)
+  print(selected_features)
+  print(best_rmse)
+  }
+  else break
+}
+
+```
+## Feature Selection: Wrapper Approach - Backward Selection
+
+```{r}
+best_rmse = 9999
+selected_features = 2:26
+
+while (TRUE) {
+  feature_to_remove = -1
+  
+  for (i in selected_features) {
+    remaining_features = setdiff(selected_features, i)
+    
+    train = over_music_train %>% select(remaining_features, adopter)
+    test = over_music_test %>% select(remaining_features, adopter)
+    
+    model = lm(adopter ~ ., data = train)
+    pred = predict(model, test)
+    
+    rmse = sqrt(mean((pred - test$adopter)^2))
+    
+    if (rmse < best_rmse) {
+      best_rmse = rmse
+      feature_to_remove = i
+    }
+  }
+  
+  if (feature_to_remove != -1) {
+    selected_features = setdiff(selected_features, feature_to_remove)
+    print(selected_features)
+    print(best_rmse)
+  } else {
+    break
+  }
+}
+
+
+```
